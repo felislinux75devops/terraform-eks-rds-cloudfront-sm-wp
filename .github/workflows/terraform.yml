@@ -1,0 +1,67 @@
+name: Terraform Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.6
+
+    - name: Initialize Terraform
+      working-directory: ./terraform
+      run: terraform init
+
+    - name: Plan Terraform
+      working-directory: ./terraform
+      run: terraform plan
+
+    - name: Apply Terraform (Manual Approval)
+      if: ${{ github.ref == 'refs/heads/main' }}
+      working-directory: ./terraform
+      run: terraform apply -auto-approve
+      # Adicionando um step de aprovação manual
+      needs: plan
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      timeout-minutes: 15
+      permissions:
+        id-token: write
+        contents: write
+      steps:
+      - name: 'Wait for deployment approval'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const result = await github.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              required_contexts: [],
+              environment: 'production',
+              transient_environment: true,
+              description: 'Deploy to production',
+              auto_merge: false
+            });
+
+            console.log(result.data);
+
+    - name: Destroy Terraform (Manual Approval)
+      if: ${{ github.event.inputs.destroy == 'true' }}
+      working-directory: ./terraform
+      run: terraform destroy -auto-approve
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
